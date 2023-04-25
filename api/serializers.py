@@ -1,6 +1,13 @@
+import os
+from django.conf import settings
 from rest_framework import serializers
 
-from api.models import TestRunRequest, TestFilePath, TestEnvironment
+from api.models import (
+    TestRunRequest, 
+    TestFilePath, 
+    TestEnvironment,
+    upload_dirs,
+)
 
 
 class TestRunRequestSerializer(serializers.ModelSerializer):
@@ -47,6 +54,27 @@ class TestFilePathSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestFilePath
         fields = ('id', 'path')
+
+
+class TestFilePathUploadSerializer(serializers.Serializer):
+    test_file = serializers.FileField(max_length=1024, allow_empty_file=True)
+    upload_dir = serializers.ChoiceField(upload_dirs)
+
+    class Meta:
+        fields = ('test_file', 'upload_dir')
+
+    def save(self):
+        directory = self.validated_data['upload_dir']
+        file = self.validated_data['test_file']
+
+        path = os.path.join(directory, file.name)
+
+        with open(os.path.join(settings.BASE_DIR, path), 'wb+') as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+
+        (obj, _) = TestFilePath.objects.get_or_create(path=path)
+        return obj
 
 
 class TestEnvironmentSerializer(serializers.ModelSerializer):

@@ -1,10 +1,13 @@
+from django.forms.models import model_to_dict
+
 from rest_framework import status
-from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
+from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, CreateAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import FormParser, MultiPartParser
 
 from api.models import TestRunRequest
-from api.serializers import TestRunRequestSerializer, TestRunRequestItemSerializer
+from api.serializers import TestFilePathUploadSerializer, TestRunRequestSerializer, TestRunRequestItemSerializer
 from api.tasks import execute_test_run_request
 from api.usecases import get_assets
 
@@ -28,3 +31,13 @@ class AssetsAPIView(APIView):
 
     def get(self, request):
         return Response(status=status.HTTP_200_OK, data=get_assets())
+
+
+class CreateTestFilePathAPIView(APIView):
+    parser_classes = [FormParser, MultiPartParser]
+
+    def post(self, request, format=None):
+        serializer = TestFilePathUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        test_file_path = serializer.save()
+        return Response(model_to_dict(test_file_path), status=status.HTTP_201_CREATED)

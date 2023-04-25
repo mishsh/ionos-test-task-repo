@@ -1,7 +1,9 @@
+import os
 from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
+from django.conf import settings
 from rest_framework import status
 
 from api.models import TestRunRequest, TestEnvironment, TestFilePath
@@ -152,3 +154,59 @@ class TestAssetsAPIView(TestCase):
         response = self.client.get(self.url)
         self.assertEqual(status.HTTP_200_OK, response.status_code)
         self.assertEqual({'k': 'v'}, response.json())
+
+
+class TestCreateTestFilePathAPIView(TestCase):
+    def setUp(self):
+        self.directory = 'api/uploaded-tests'
+        self.pth = os.path.join(self.directory, 'test_success.py')
+        self.clean()
+
+    def tearDown(self):
+        self.clean()
+
+    def clean(self):
+        if os.path.exists(self.pth):
+            os.remove(self.pth)
+
+    def test_create(self):
+        response = self.client.post(
+            reverse('test_file_path_create'),
+            {
+                'test_file': open('sample-tests/test_success.py', 'r'),
+                'upload_dir':  self.directory
+            },
+            format='multipart'
+        )
+        data = response.json()
+
+        self.assertEqual(status.HTTP_201_CREATED, response.status_code)
+
+        self.assertIn('path', data)
+        self.assertIn('id', data)
+
+        self.assertEqual(data['path'], self.pth)
+        self.assertGreater(data['id'], 0)
+        self.assertTrue(os.path.exists(self.pth))
+
+    def test_create_without_allowed_directory(self):
+        response = self.client.post(
+            reverse('test_file_path_create'),
+            {
+                'test_file': open('sample-tests/test_success.py', 'r'),
+                'upload_dir':  ""
+            },
+            format='multipart'
+        )
+        self.assertEqual(status.HTTP_400_BAD_REQUEST, response.status_code)
+
+    def test_create_without_allowed_file(self):
+        response = self.client.post(
+            reverse('test_file_path_create'),
+            {
+                'test_file': "",
+                'upload_dir':  self.directory
+            },
+            format='multipart'
+        )
+        self.assertEqual(status.HTTP_400_BAD_REQUEST, response.status_code)

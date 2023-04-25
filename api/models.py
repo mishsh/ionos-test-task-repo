@@ -1,3 +1,4 @@
+import os
 from django.conf import settings
 from django.db import models
 
@@ -12,7 +13,10 @@ class Timestampable(models.Model):
         abstract = True
 
 
+upload_dirs = [os.path.relpath(p, settings.BASE_DIR) for p in settings.TEST_BASE_DIRS]
+
 class TestFilePath(Timestampable):
+    __test__ = False
     path = models.CharField(max_length=1024)
 
     def __str__(self):
@@ -20,6 +24,7 @@ class TestFilePath(Timestampable):
 
 
 class TestEnvironment(Timestampable):
+    __test__ = False
     class StatusChoices(ExtendedEnum):
         IDLE = 'IDLE'
         BUSY = 'BUSY'
@@ -49,6 +54,7 @@ class TestEnvironment(Timestampable):
 
 
 class TestRunRequest(Timestampable):
+    __test__ = False
     class StatusChoices(ExtendedEnum):
         SUCCESS = 'SUCCESS'  # tests are done successfully
         RUNNING = 'RUNNING'  # tests are running

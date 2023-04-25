@@ -144,8 +144,9 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 
 TEST_BASE_DIRS = [
-    os.path.join(BASE_DIR, 'sample-tests'),
+    os.path.join(BASE_DIR, 'api/uploaded-tests'),
     os.path.join(BASE_DIR, 'api/tests'),
+    os.path.join(BASE_DIR, 'sample-tests'),
 ]
 TEST_RUN_REQUEST_TIMEOUT_SECONDS = 60 * 60 * 30  # 30 Minutes
 TEST_BASE_CMD = ['pytest', '-v']

@@ -23,22 +23,31 @@ class IONOSTestExecutor extends Component {
     requester: '',
     env: '',
     testPath: [],
+    uploadDir: null,
+    testFileInput: '',
+    formGeneration: 1,
   };
 
   interval = null
 
-  componentDidMount () {
-    axios.get('assets').then(response => {
-      this.setState({assets: response.data})
-    }).catch(error => {
-      this.setState({error: true})
-    })
-
+  componentDidMount() {
+    this.loadAssets()
     this.interval = setInterval(this.refreshList, 1000);
     this.refreshList()
   }
   componentWillUnmount() {
     clearInterval(this.interval);
+  }
+
+  loadAssets() {
+    return axios.get('assets').then(response => {
+      this.setState({
+        assets: response.data, 
+        uploadDir: response.data.upload_dirs[0]
+      })
+    }).catch(error => {
+      this.setState({error: true})
+    })
   }
 
   getDisplayPath = (path) => {
@@ -65,7 +74,7 @@ class IONOSTestExecutor extends Component {
 
   submitTest = () => {
     axios.post('test-run', {requested_by: this.state.requester, env: this.state.env, path: this.state.testPath}).then(response => {
-      this.setState({requester: '', env: '', testPath: ''})
+        this.setState({requester: '', env: '', testPath: ''})
         this.refreshList()
       }).catch(error => {
         this.setState({
@@ -80,20 +89,26 @@ class IONOSTestExecutor extends Component {
     const formData = new FormData();
     formData.append('upload_dir', this.state.uploadDir)
     formData.append('test_file', this.state.testFile)
-    axios.post('test-file', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+
+    
+    return axios.post('test-file-path', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
       }
-    ).then(response => {
-        this.setState({uploadDir: '', testFile: null})
-        this.refreshAssets()
-      }).catch(error => {
-        this.setState({
-          uploadDirError: error.response.data.upload_dir,
-          testFileError: error.response.data.test_file,
-        })
+    })
+    .catch(error => {
+      this.setState({
+        uploadDirError: error.response.data.upload_dir,
+        testFileError: error.response.data.test_file,
+      })  
+    })
+    .then(() => {
+      this.setState({
+        testFile: '',
+        formGeneration: this.state.formGeneration + 1
       })
+      return this.loadAssets()
+    })
   }
 
   viewItemDetails = (itemId) => {
@@ -152,13 +167,17 @@ class IONOSTestExecutor extends Component {
           ></AddNewRequest>
           <AddNewTest
               assets={this.state.assets}
+              
+              formGeneration={this.state.formGeneration}
               testFile={this.state.testFile}
               testFileChanged={e => this.setState({ testFile: e.target.files[0] })}
               testFileError={this.testFileError}
+
               uploadDir={this.state.uploadDir}
               uploadDirChanged={e => this.setState({ uploadDir: e.target.value?.toString() })}
               uploadDirError={this.state.uploadDirError}
-              uploadTest={this.uploadTest}
+
+              uploadTest={this.uploadTest.bind(this)}
           ></AddNewTest>
           <TestExecutionTable items={this.state.items} viewItemDetails={this.viewItemDetails}></TestExecutionTable>
       </Aux>

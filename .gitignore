@@ -6,6 +6,7 @@
 # Distribution / packaging
 .Python
 env/
+.venv
 .python-version
 node_modules
 
@@ -33,6 +34,7 @@ provision/postgres-data/*
 frontend/node_modules
 /.pnp
 .pnp.js
+api/uploaded-tests
 
 # testing
 /coverage
