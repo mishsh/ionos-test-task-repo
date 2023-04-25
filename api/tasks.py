@@ -3,8 +3,9 @@ import subprocess
 
 from celery import shared_task
 from django.conf import settings
+from django.db import transaction
 
-from api.models import TestRunRequest, TestEnvironment
+from api.models import TestRunRequest
 
 
 logger = logging.getLogger(__name__)
@@ -28,14 +29,18 @@ def handle_task_retry(instance: TestRunRequest, retry: int) -> None:
 
 @shared_task
 def execute_test_run_request(instance_id: int, retry: int = 0) -> None:
-    instance = TestRunRequest.objects.get(id=instance_id)
+    should_retry = False
+    with transaction.atomic():
+        instance = TestRunRequest.objects.select_for_update().get(id=instance_id)
+        env = instance.env
+        if env.is_idle():
+            env.lock()
+        else:
+            should_retry = True
 
-    if instance.env.is_busy():
+    if should_retry:
         handle_task_retry(instance, retry)
         return
-
-    env = TestEnvironment.objects.get(name=instance.env.name)
-    env.lock()
 
     cmd = instance.get_command()
     logger.info(f'Running tests(ID:{instance_id}), CMD({" ".join(cmd)}) on env {instance.env.name}')

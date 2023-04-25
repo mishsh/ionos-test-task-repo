@@ -1,7 +1,13 @@
+from multiprocessing.pool import ThreadPool
+import sys
+import threading
+from time import sleep
+from unittest import skipIf
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
+from django.db import connection
 
 from api.models import TestEnvironment, TestRunRequest, TestFilePath
 from api.tasks import handle_task_retry, MAX_RETRY, execute_test_run_request
@@ -53,3 +59,91 @@ class TestTasks(TestCase):
         self.assertTrue(wait.called)
         wait.assert_called_with(timeout=settings.TEST_RUN_REQUEST_TIMEOUT_SECONDS)
         self.assertEqual(TestRunRequest.StatusChoices.SUCCESS.name, self.test_run_req.status)
+
+
+class ReturnValueThread(threading.Thread):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.result = None
+
+    def run(self):
+        if self._target is None:
+            return
+        try:
+            self.result = self._target(*self._args, **self._kwargs)
+        except Exception as exc:
+            print(f'{type(exc).__name__}: {exc}', file=sys.stderr)
+
+    def join(self, *args, **kwargs):
+        super().join(*args, **kwargs)
+        return self.result
+
+
+class TestTasksAtomicityUsingEvents(TransactionTestCase):
+    def setUp(self):
+        self.lock_event = threading.Event()
+        self.unlock_event = threading.Event()
+
+        original_lock = TestEnvironment.lock
+        def patched_lock(_self):
+            original_lock(_self)
+            self.lock_event.set()
+        TestEnvironment.lock = patched_lock
+
+        self.original_lock = original_lock
+
+        original_unlock = TestEnvironment.unlock
+        def patched_unlock(_self):
+            sleep(0.2)
+            original_unlock(_self)
+            self.unlock_event.set()
+        TestEnvironment.unlock = patched_unlock
+
+        self.original_unlock = original_unlock
+
+
+    def tearDown(self):
+        TestEnvironment.lock = self.original_lock
+        TestEnvironment.unlock = self.original_unlock
+
+
+    @skipIf(threading is None, "Test requires threading")
+    @patch('subprocess.Popen.wait', return_value=0)
+    @patch('api.tasks.handle_task_retry')
+    def test_env_runs_tests_sequentially(self, _, retry):
+        env = TestEnvironment.objects.create(name='atomic_env')
+        path1 = TestFilePath.objects.create(path='path13')
+        
+        def create_test_run() -> TestRunRequest:
+            run = TestRunRequest.objects.create(requested_by='Tester', env=env)
+            run.path.add(path1)
+            return run
+
+        def func(run: TestRunRequest):
+            execute_test_run_request(run.id)
+            connection.close()
+        
+
+        first = create_test_run()
+        second = create_test_run()
+        
+        th1 = ReturnValueThread(target=func, args=(first,))
+        th2 = ReturnValueThread(target=func, args=(second,))
+        th3 = ReturnValueThread(target=func, args=(second,))
+
+
+        th1.start()
+
+        self.lock_event.wait()
+        th2.start() # wait 1st lock and try to lock from 2nd thread (should fail)
+
+        self.unlock_event.wait()
+        self.assertTrue(retry.called_once) # retry already called by the time of unlock
+        self.lock_event.clear()
+        th3.start()  # after unlock event new lock is possible
+
+        th1.join()
+        th2.join()
+        th3.join()
+
+        self.assertTrue(self.lock_event.is_set())
